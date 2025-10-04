@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Novel Reader</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+  <script src="decrypt.js"></script>
+  <style>
+    :root {
+      --light-bg-color: #f9f9f9;
+      --light-text-color: #111;
+      --dark-bg-color: #010101;
+      --dark-text-color: #C5C5C5;
+      --accent-color: #617AC1;
+    }
+
+    body {
+      margin: 0;
+      font-family: 'Inter', sans-serif;
+      background-color: var(--light-bg-color);
+      color: var(--light-text-color);
+      overflow-x: hidden;
+      max-width: 100%;
+    }
+
+    header, footer {
+      padding: 10px;
+      background: white;
+      z-index: 10;
+    }
+
+    header { 
+      top: 0; 
+      border-bottom: 1px solid #ddd; 
+    }
+
+    footer { 
+      bottom: 0; 
+      border-top: 1px solid #ddd; 
+    }
+
+    main {
+      padding: 20px 16px 60px;
+      line-height: 1.6;
+      min-height: 700px;
+      background-color: var(--light-bg-color);
+      color: var(--light-text-color);
+    }
+
+    .nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+    }
+
+    .nav button {
+      background: none;
+      border: none;
+      font-size: 18px;
+      cursor: pointer;
+    }
+
+    h1 {
+      font-size: 18px; 
+      margin-bottom: 12px; 
+    }
+
+    p {
+      margin: 1em 0; 
+    }
+
+    .popup-overlay {
+      position: fixed; 
+      top: 0; 
+      left: 0; 
+      width: 100%; 
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      display: none; 
+      align-items: center; 
+      justify-content: center;
+      z-index: 20;
+    }
+
+    .popup-content {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      max-height: 80%;
+      overflow-y: auto;
+      width: 80%; max-width: 400px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      border: 3px solid white;
+    }
+
+    .chapter-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+      gap: 10px;
+      padding-top: 10px;
+      padding-bottom: 10px;
+    }
+
+    .chapter-list button {
+      background: #f0f0f0;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      padding: 10px;
+      font-size: 14px;
+      cursor: pointer;
+      color: var(--light-text-color);
+    }
+
+    .chapter-list button.active {
+      background-color: var(--accent-color);
+      color: white;
+      border-color: var(--accent-color);
+    }
+
+    @media (prefers-color-scheme: dark) {
+
+      body { 
+        background-color: var(--dark-bg-color); 
+      }
+
+      header, footer { 
+        background: var(--dark-bg-color); 
+        border-color: #333; 
+      }
+
+      .nav button svg polyline { 
+        stroke: var(--dark-text-color); 
+      }
+
+      #chapterNumber, #chapterNumberBottom, .popup-content > h2 { 
+        color: var(--dark-text-color); 
+      }
+
+      main { 
+        background-color: var(--dark-bg-color); 
+        color: var(--dark-text-color); 
+      }
+
+      .popup-overlay { 
+        background: rgba(0, 0, 0, 0.7); 
+      }
+
+      .popup-content { 
+        background: var(--dark-bg-color); 
+      }
+
+      .chapter-list button {
+        background: var(--dark-bg-color);
+        border-color: var(--dark-text-color);
+        color: var(--dark-text-color);
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="nav">
+      <button id="navLeftTop"></button>
+      <span id="chapterNumber" style="cursor: pointer;">Chapter</span>
+      <button id="navRightTop"></button>
+    </div>
+  </header>
+  <main>
+    <h1 id="chapterTitle"></h1>
+    <div id="chapterContent" class="content"></div>
+  </main>
+  <footer>
+    <div class="nav">
+      <button id="navLeftBottom"></button>
+      <span id="chapterNumberBottom" style="cursor: pointer;">Chapter</span>
+      <button id="navRightBottom"></button>
+    </div>
+  </footer>
+
+  <div id="chapterPopup" class="popup-overlay">
+    <div class="popup-content">
+      <h2>Chapter Selection</h2>
+      <div id="chapterList" class="chapter-list"></div>
+    </div>
+  </div>
+
+  <script>
+    const Icons = {
+      left: `<svg viewBox="0 0 24 24" width="24" height="24"><polyline points="15 18 9 12 15 6" stroke="black" stroke-width="2" fill="none"/></svg>`,
+      right: `<svg viewBox="0 0 24 24" width="24" height="24"><polyline points="9 6 15 12 9 18" stroke="black" stroke-width="2" fill="none"/></svg>`
+    };
+
+    const totalChapters = 2334;
+    let currentChapter = 1;
+    let password = null;
+
+    function saveState() {
+      localStorage.setItem('lastChapter', currentChapter);
+      localStorage.setItem('scrollPosition', window.scrollY);
+    }
+
+    function determineDesiredInitial() {
+      const storedChapter = localStorage.getItem('lastChapter');
+      const storedScroll = localStorage.getItem('scrollPosition');
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlChapter = urlParams.get('chapter');
+
+      let initialChapter = 1;
+      let initialScroll = 0;
+
+      if (urlChapter) {
+        initialChapter = parseInt(urlChapter, 10) || 1;
+        if (storedChapter && parseInt(storedChapter, 10) === initialChapter) {
+          initialScroll = storedScroll ? parseInt(storedScroll, 10) : 0;
+        }
+      } else if (storedChapter) {
+        initialChapter = parseInt(storedChapter, 10) || 1;
+        initialScroll = storedScroll ? parseInt(storedScroll, 10) : 0;
+      }
+      return { chapter: initialChapter, scroll: initialScroll };
+    }
+
+    function updateUrl() {
+      const urlParams = new URLSearchParams();
+      urlParams.set('chapter', currentChapter);
+      history.replaceState({}, '', `?${urlParams}`);
+    }
+
+    function parseChapter(text) {
+      return text
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0)
+        .map(line => `<p>${line}</p>`)
+        .join('');
+    }
+
+    function cleanTitle(line) {
+      return line.replace(/^chapter\s*\d+\s*[-—–:：.]*\s*/i, '').trim();
+    }
+
+    async function loadDecryptedChapter(n, scrollPos = 0) {
+      if (n < 1 || n > totalChapters) return;
+
+      currentChapter = n;
+      saveState();
+
+      document.getElementById('chapterNumber').textContent = `Chapter ${n}`;
+      document.getElementById('chapterNumberBottom').textContent = `Chapter ${n}`;
+      document.getElementById('chapterTitle').textContent = '';
+      document.getElementById('chapterContent').innerHTML = `<p>Loading...</p>`;
+
+      updateUrl();
+
+      try {
+        const txt = await loadChapter(n, password);
+        const lines = txt.trim().split('\n').filter(l => l.trim().length > 0);
+        const rawTitle = lines[0] || `Chapter ${n}`;
+        const title = cleanTitle(rawTitle);
+        const contentOnly = lines.slice(1).join('\n\n');
+
+        document.getElementById('chapterTitle').textContent = title;
+        document.getElementById('chapterContent').innerHTML = parseChapter(contentOnly);
+
+        document.title = `${n} | ${title}`;
+
+        requestAnimationFrame(() => {
+          window.scrollTo({ top: scrollPos, behavior: 'auto' });
+        });
+      } catch (e) {
+        document.getElementById('chapterTitle').textContent = 'Error';
+        document.getElementById('chapterContent').innerHTML =
+          `<p>Chapter ${n} not found or decryption failed (${e.message}).</p>`;
+        document.title = `Error loading chapter ${n}`;
+      }
+    }
+
+    function openChapterPopup() {
+      const chapterListDiv = document.getElementById('chapterList');
+      chapterListDiv.innerHTML = '';
+      let activeBtn = null;
+
+      for (let chapter = 1; chapter <= totalChapters; chapter++) {
+        const btn = document.createElement('button');
+        btn.textContent = `Ch ${chapter}`;
+        if (chapter === currentChapter) {
+          btn.classList.add('active');
+          activeBtn = btn;
+        }
+        btn.onclick = () => {
+          loadDecryptedChapter(chapter);
+          document.getElementById('chapterPopup').style.display = 'none';
+        };
+        chapterListDiv.appendChild(btn);
+      }
+
+      document.getElementById('chapterPopup').style.display = 'flex';
+      if (activeBtn) activeBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    async function ensurePassword() {
+      let storedPassword = localStorage.getItem('novelKey');
+      while (true) {
+        try {
+          if (!storedPassword) {
+            storedPassword = prompt("Enter decryption password:");
+          }
+          // test with chapter 1
+          await loadChapter(1, storedPassword);
+          password = storedPassword;
+          localStorage.setItem('novelKey', password);
+          return;
+        } catch {
+          storedPassword = null;
+          localStorage.removeItem('novelKey');
+          alert("Invalid password. Please try again.");
+        }
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      document.getElementById('navLeftTop').innerHTML = Icons.left;
+      document.getElementById('navRightTop').innerHTML = Icons.right;
+      document.getElementById('navLeftBottom').innerHTML = Icons.left;
+      document.getElementById('navRightBottom').innerHTML = Icons.right;
+
+      document.getElementById("navLeftTop").onclick = () => loadDecryptedChapter(currentChapter - 1);
+      document.getElementById("navLeftBottom").onclick = () => loadDecryptedChapter(currentChapter - 1);
+      document.getElementById("navRightTop").onclick = () => loadDecryptedChapter(currentChapter + 1);
+      document.getElementById("navRightBottom").onclick = () => loadDecryptedChapter(currentChapter + 1);
+
+      document.getElementById('chapterNumber').onclick = openChapterPopup;
+      document.getElementById('chapterNumberBottom').onclick = openChapterPopup;
+      document.getElementById('chapterPopup').addEventListener('click', (e) => {
+        if (e.target.id === 'chapterPopup') {
+          e.currentTarget.style.display = 'none';
+        }
+      });
+
+      window.addEventListener('scroll', saveState);
+      window.addEventListener('beforeunload', saveState);
+
+      const { chapter, scroll } = determineDesiredInitial();
+
+      await ensurePassword();
+      loadDecryptedChapter(chapter, scroll);
+    });
+  </script>
+</body>
+</html>
+
