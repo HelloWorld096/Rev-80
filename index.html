@@ -38,30 +38,33 @@
 
     <script>
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", async () => {
-    const reg = await navigator.serviceWorker.register("./sw.js");
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js")
+      .then(reg => {
+        console.log("Service Worker registered");
 
-    console.log("SW registered");
+        if (navigator.serviceWorker.controller) {
+          const params = new URLSearchParams(location.search);
+          const ch = parseInt(params.get("chapter") || "1");
 
-    // expose console helpers
-    window.updateCacheWindow = (forward = 130, backward = 20) => {
-      navigator.serviceWorker.controller?.postMessage({
-        type: "UPDATE_WINDOW",
-        forward,
-        backward
-      });
-    };
+          navigator.serviceWorker.controller.postMessage({
+            type: "CACHE_AROUND",
+            chapter: ch
+          });
+        }
 
-    window.refreshChapterCache = () => {
-      const params = new URLSearchParams(location.search);
-      const ch = parseInt(params.get("chapter") || "1");
-      navigator.serviceWorker.controller?.postMessage({
-        type: "CACHE_AROUND",
-        chapter: ch
-      });
-    };
+        window.updateCacheWindow = (f = 130, b = 20) => {
+          navigator.serviceWorker.controller?.postMessage({
+            type: "UPDATE_WINDOW",
+            forward: f,
+            backward: b
+          });
+        };
+
+      })
+      .catch(err => console.error(err));
   });
 }
-    </script>
+        </script>
 </body>
 </html>
