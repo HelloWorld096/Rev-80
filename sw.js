@@ -1,205 +1,107 @@
-const STATIC_CACHE = "novel-static-v1";
-const CHAPTER_CACHE = "novel-chapters-v1";
+const DATA_CACHE = 'novel-data-v2';
+const STATIC_CACHE = 'static-assets-v2';
+const FONTS_CACHE = 'fonts-cache-v2';
 
-const STATIC_FILES = [
-  "./",
-  "./index.html",
-  "./style.css",
-  "./script.js",
-  "./decrypt.js",
-  "./manifest.json"
+const APP_SHELL = [
+  '/',
+  '/index.html',
+  '/style.css',
+  '/script.js',
+  '/decrypt.js',
+  '/manifest.json'
 ];
 
-let FORWARD = 130;
-let BACKWARD = 20;
-let currentChapter = 1;
-
-
-
-/* INSTALL */
-
-self.addEventListener("install", event => {
+self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(STATIC_CACHE).then(cache => cache.addAll(STATIC_FILES))
+    caches.open(STATIC_CACHE).then(cache => {
+      return cache.addAll(APP_SHELL);
+    }).then(() => self.skipWaiting())
   );
-  self.skipWaiting();
 });
 
-
-
-/* ACTIVATE */
-
-self.addEventListener("activate", event => {
-  event.waitUntil(self.clients.claim());
+self.addEventListener('activate', event => {
+  const allowedCaches = [DATA_CACHE, STATIC_CACHE, FONTS_CACHE];
+  event.waitUntil(
+    caches.keys().then(keys => Promise.all(
+      keys.map(key => {
+        if (!allowedCaches.includes(key)) return caches.delete(key);
+      })
+    )).then(() => self.clients.claim())
+  );
 });
 
+// PREFETCH LOGIC
+self.addEventListener('message', event => {
+  if (!event.data || event.data.type !== 'PREFETCH_CHAPTERS') return;
 
+  const { current, total, ahead, behind } = event.data;
+  const start = Math.max(1, current - behind);
+  const end = Math.min(total, current + ahead);
 
-/* FETCH HANDLER */
+  // Keep the worker alive until all fetches in this batch settle
+  event.waitUntil(
+    caches.open(DATA_CACHE).then(async (cache) => {
+      for (let i = start; i <= end; i++) {
+        const url = `/data/c${i}.json`;
+        const matched = await cache.match(url);
 
-self.addEventListener("fetch", event => {
+        if (!matched) {
+          try {
+            const response = await fetch(url);
+            if (response.ok) {
+              await cache.put(url, response.clone());
+            }
+          } catch (e) {
+            console.error(`Failed to prefetch chapter ${i}`);
+          }
+        }
+      }
+    })
+  );
+});
 
+self.addEventListener('fetch', event => {
+  if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
 
-  // chapter files
-  if (url.pathname.includes("/data/c")) {
-    event.respondWith(handleChapter(event.request));
-    return;
-  }
-
-  // google fonts
-  if (url.hostname.includes("fonts")) {
-    event.respondWith(cacheFonts(event.request));
-    return;
-  }
-
-  // static assets
-  event.respondWith(cacheFirst(event.request));
-});
-
-
-
-/* CACHE FIRST */
-
-async function cacheFirst(req) {
-
-  const cache = await caches.open(STATIC_CACHE);
-  const cached = await cache.match(req);
-
-  if (cached) return cached;
-
-  try {
-    const res = await fetch(req);
-    cache.put(req, res.clone());
-    return res;
-  } catch {
-    return cached;
-  }
-}
-
-
-
-/* FONT CACHE */
-
-async function cacheFonts(req) {
-
-  const cache = await caches.open(STATIC_CACHE);
-  const cached = await cache.match(req);
-
-  if (cached) return cached;
-
-  const res = await fetch(req);
-  cache.put(req, res.clone());
-  return res;
-}
-
-
-
-/* CHAPTER CACHE */
-
-async function handleChapter(req) {
-
-  const cache = await caches.open(CHAPTER_CACHE);
-
-  const cached = await cache.match(req);
-  if (cached) return cached;
-
-  try {
-
-    const res = await fetch(req);
-
-    cache.put(req, res.clone());
-
-    const num = extractChapter(req.url);
-
-    if (num) {
-      currentChapter = num;
-      maintainWindow(num);
-    }
-
-    return res;
-
-  } catch {
-
-    return cached;
-  }
-}
-
-
-
-/* PARSE CHAPTER NUMBER */
-
-function extractChapter(url) {
-
-  const m = url.match(/c(\d+)\.json/);
-
-  if (!m) return null;
-
-  return parseInt(m[1]);
-}
-
-
-
-/* CACHE WINDOW */
-
-async function maintainWindow(center) {
-
-  const start = Math.max(1, center - BACKWARD);
-  const end = center + FORWARD;
-
-  cacheRange(start, end);
-
-  if (end - center < 30) {
-    cacheRange(end, end + 50);
-  }
-}
-
-
-
-/* CACHE RANGE */
-
-async function cacheRange(start, end) {
-
-  const cache = await caches.open(CHAPTER_CACHE);
-
-  for (let i = start; i <= end; i++) {
-
-    const url = `./data/c${i}.json`;
-
-    const exists = await cache.match(url);
-
-    if (!exists) {
-
-      fetch(url)
+  // 1. Navigation (HTML)
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
         .then(res => {
-          if (res.ok) cache.put(url, res.clone());
+          const copy = res.clone();
+          caches.open(STATIC_CACHE).then(c => c.put('/index.html', copy));
+          return res;
         })
-        .catch(() => {});
-    }
-  }
-}
-
-
-
-/* MESSAGE API */
-
-self.addEventListener("message", event => {
-
-  const data = event.data;
-
-  if (data.type === "CACHE_AROUND") {
-
-    currentChapter = data.chapter;
-
-    maintainWindow(currentChapter);
+        .catch(() => caches.match('/index.html'))
+    );
+    return;
   }
 
-  if (data.type === "UPDATE_WINDOW") {
-
-    FORWARD = data.forward ?? FORWARD;
-    BACKWARD = data.backward ?? BACKWARD;
-
-    maintainWindow(currentChapter);
+  // 2. Data files (Chapters) - Cache First
+  if (url.pathname.includes('/data/')) {
+    event.respondWith(
+      caches.match(event.request).then(cached => {
+        return cached || fetch(event.request).then(res => {
+          const clone = res.clone();
+          caches.open(DATA_CACHE).then(c => c.put(event.request, clone));
+          return res;
+        });
+      })
+    );
+    return;
   }
 
+  // 3. Fonts & Static Assets - Stale While Revalidate
+  event.respondWith(
+    caches.match(event.request).then(cached => {
+      const networkFetch = fetch(event.request).then(res => {
+        const clone = res.clone();
+        const cacheName = (url.hostname.includes('fonts')) ? FONTS_CACHE : STATIC_CACHE;
+        caches.open(cacheName).then(c => c.put(event.request, clone));
+        return res;
+      }).catch(() => cached);
+      return cached || networkFetch;
+    })
+  );
 });
