@@ -37,57 +37,31 @@
   </div>
 
     <script>
-    window.forwardWindowSize = 130;
-    window.backwardWindowSize = 20;
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", async () => {
+    const reg = await navigator.serviceWorker.register("./sw.js");
 
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js')
-          .then(reg => console.log('Service Worker registered successfully'))
-          .catch(err => console.error('Service Worker registration failed:', err));
+    console.log("SW registered");
+
+    // expose console helpers
+    window.updateCacheWindow = (forward = 130, backward = 20) => {
+      navigator.serviceWorker.controller?.postMessage({
+        type: "UPDATE_WINDOW",
+        forward,
+        backward
       });
-
-      navigator.serviceWorker.ready.then(() => {
-        // Trigger initial cache population once the SW is active
-        const params = new URLSearchParams(window.location.search);
-        const chapter = parseInt(params.get('chapter'), 10) || parseInt(localStorage.getItem('lastChapter'), 10) || 1;
-        notifySW(chapter, true);
-      });
-    }
-
-    function notifySW(chapter, forceUpdate = false) {
-      if (navigator.serviceWorker.controller) {
-        navigator.serviceWorker.controller.postMessage({
-          type: 'CHAPTER_CHANGED',
-          chapter: chapter,
-          forward: window.forwardWindowSize,
-          backward: window.backwardWindowSize,
-          force: forceUpdate
-        });
-      }
-    }
-
-    // Intercept chapter changes without touching script.js
-    // script.js calls history.replaceState whenever a new chapter loads
-    const originalReplaceState = history.replaceState;
-    history.replaceState = function() {
-      originalReplaceState.apply(this, arguments);
-      const params = new URLSearchParams(window.location.search);
-      const chapter = parseInt(params.get('chapter'), 10);
-      if (chapter) notifySW(chapter);
     };
 
-    // Expose function to console
-    window.updateCacheWindow = function(forward, backward) {
-      if (forward !== undefined) window.forwardWindowSize = forward;
-      if (backward !== undefined) window.backwardWindowSize = backward;
-      
-      const params = new URLSearchParams(window.location.search);
-      const chapter = parseInt(params.get('chapter'), 10) || parseInt(localStorage.getItem('lastChapter'), 10) || 1;
-      
-      notifySW(chapter, true); // Force SW to re-evaluate the window immediately
-      console.log(`Cache window updated. Forward: ${window.forwardWindowSize}, Backward: ${window.backwardWindowSize}`);
+    window.refreshChapterCache = () => {
+      const params = new URLSearchParams(location.search);
+      const ch = parseInt(params.get("chapter") || "1");
+      navigator.serviceWorker.controller?.postMessage({
+        type: "CACHE_AROUND",
+        chapter: ch
+      });
     };
+  });
+}
     </script>
 </body>
 </html>
