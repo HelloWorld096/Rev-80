@@ -1,70 +1,60 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Novel Reader</title>
-  <link rel="stylesheet" href="style.css">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
-  <script src="decrypt.js"></script>
-  <script src="script.js"></script>
-</head>
-<body>
-  <header>
-    <div class="nav">
-      <button id="navLeftTop"></button>
-      <span id="chapterNumber" style="cursor: pointer;">Chapter</span>
-      <button id="navRightTop"></button>
-    </div>
-  </header>
-  <main>
-    <h1 id="chapterTitle"></h1>
-    <div id="chapterContent" class="content"></div>
-  </main>
-  <footer>
-    <div class="nav">
-      <button id="navLeftBottom"></button>
-      <span id="chapterNumberBottom" style="cursor: pointer;">Chapter</span>
-      <button id="navRightBottom"></button>
-    </div>
-  </footer>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Novel Reader</title>
 
-  <div id="chapterPopup" class="popup-overlay">
-    <div class="popup-content">
-      <h2>Chapter Selection</h2>
-      <div id="chapterList" class="chapter-list"></div>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="style.css">
+    <script src="decrypt.js"></script>
+    <script src="script.js" defer></script>
+  </head>
+
+  <body style="font-family: 'Inter', sans-serif;">
+    <header>
+      <div class="nav">
+        <button id="navLeftTop"></button>
+        <span id="chapterNumber" style="cursor: pointer;">Chapter</span>
+        <button id="navRightTop"></button>
+      </div>
+    </header>
+    <main>
+      <h1 id="chapterTitle"></h1>
+      <div id="chapterContent" class="content"></div>
+    </main>
+    <footer>
+      <div class="nav">
+        <button id="navLeftBottom"></button>
+        <span id="chapterNumberBottom" style="cursor: pointer;">Chapter</span>
+        <button id="navRightBottom"></button>
+      </div>
+    </footer>
+
+    <div id="chapterPopup" class="popup-overlay">
+      <div class="popup-content">
+        <h2>Chapter Selection</h2>
+        <div id="chapterList" class="chapter-list"></div>
+      </div>
     </div>
-  </div>
 
     <script>
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js")
-      .then(reg => {
-        console.log("Service Worker registered");
-
-        if (navigator.serviceWorker.controller) {
-          const params = new URLSearchParams(location.search);
-          const ch = parseInt(params.get("chapter") || "1");
-
-          navigator.serviceWorker.controller.postMessage({
-            type: "CACHE_AROUND",
-            chapter: ch
-          });
-        }
-
-        window.updateCacheWindow = (f = 130, b = 20) => {
-          navigator.serviceWorker.controller?.postMessage({
-            type: "UPDATE_WINDOW",
-            forward: f,
-            backward: b
-          });
-        };
-
-      })
-      .catch(err => console.error(err));
-  });
-}
-        </script>
-</body>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', async () => {
+          try {
+            const reg = await navigator.serviceWorker.register('./sw.js');
+            console.log("SW Registered:", reg);
+            if (!navigator.serviceWorker.controller) {
+              window.location.reload();
+            }
+          } catch (err) {
+            console.error("SW registration failed:", err);
+          }
+        });
+      }
+    </script>
+  </body>
 </html>
