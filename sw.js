@@ -2,17 +2,16 @@ const STATIC_CACHE = "novel-static-v1";
 const CHAPTER_CACHE = "novel-chapters-v1";
 
 const STATIC_FILES = [
-  "/",
-  "/index.html",
-  "/style.css",
-  "/script.js",
-  "/decrypt.js",
-  "/manifest.json"
+  "./",
+  "./index.html",
+  "./style.css",
+  "./script.js",
+  "./decrypt.js",
+  "./manifest.json"
 ];
 
-let FORWARD_CACHE = 130;
-let BACKWARD_CACHE = 20;
-
+let FORWARD = 130;
+let BACKWARD = 20;
 let currentChapter = 1;
 
 
@@ -21,21 +20,8 @@ let currentChapter = 1;
 
 self.addEventListener("install", event => {
   event.waitUntil(
-    caches.open(STATIC_CACHE).then(async cache => {
-
-      await cache.addAll(STATIC_FILES);
-
-      // cache google fonts css
-      try {
-        const res = await fetch(
-          "https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap"
-        );
-        await cache.put(res.url, res.clone());
-      } catch {}
-
-    })
+    caches.open(STATIC_CACHE).then(cache => cache.addAll(STATIC_FILES))
   );
-
   self.skipWaiting();
 });
 
@@ -49,25 +35,31 @@ self.addEventListener("activate", event => {
 
 
 
-/* FETCH */
+/* FETCH HANDLER */
 
 self.addEventListener("fetch", event => {
 
   const url = new URL(event.request.url);
 
-  // chapter json files
-  if (url.pathname.startsWith("/data/c")) {
-
-    event.respondWith(chapterStrategy(event.request));
+  // chapter files
+  if (url.pathname.includes("/data/c")) {
+    event.respondWith(handleChapter(event.request));
     return;
   }
 
+  // google fonts
+  if (url.hostname.includes("fonts")) {
+    event.respondWith(cacheFonts(event.request));
+    return;
+  }
+
+  // static assets
   event.respondWith(cacheFirst(event.request));
 });
 
 
 
-/* STATIC CACHE */
+/* CACHE FIRST */
 
 async function cacheFirst(req) {
 
@@ -76,9 +68,28 @@ async function cacheFirst(req) {
 
   if (cached) return cached;
 
+  try {
+    const res = await fetch(req);
+    cache.put(req, res.clone());
+    return res;
+  } catch {
+    return cached;
+  }
+}
+
+
+
+/* FONT CACHE */
+
+async function cacheFonts(req) {
+
+  const cache = await caches.open(STATIC_CACHE);
+  const cached = await cache.match(req);
+
+  if (cached) return cached;
+
   const res = await fetch(req);
   cache.put(req, res.clone());
-
   return res;
 }
 
@@ -86,56 +97,66 @@ async function cacheFirst(req) {
 
 /* CHAPTER CACHE */
 
-async function chapterStrategy(req) {
+async function handleChapter(req) {
 
   const cache = await caches.open(CHAPTER_CACHE);
 
   const cached = await cache.match(req);
-
   if (cached) return cached;
 
-  const res = await fetch(req);
+  try {
 
-  cache.put(req, res.clone());
+    const res = await fetch(req);
 
-  const chapter = parseChapterNumber(req.url);
+    cache.put(req, res.clone());
 
-  if (chapter) {
+    const num = extractChapter(req.url);
 
-    currentChapter = chapter;
+    if (num) {
+      currentChapter = num;
+      maintainWindow(num);
+    }
 
-    maintainCacheWindow(chapter);
+    return res;
+
+  } catch {
+
+    return cached;
   }
-
-  return res;
 }
 
 
 
-function parseChapterNumber(url) {
+/* PARSE CHAPTER NUMBER */
+
+function extractChapter(url) {
 
   const m = url.match(/c(\d+)\.json/);
 
-  return m ? parseInt(m[1]) : null;
+  if (!m) return null;
+
+  return parseInt(m[1]);
 }
 
 
 
 /* CACHE WINDOW */
 
-async function maintainCacheWindow(center) {
+async function maintainWindow(center) {
 
-  const start = Math.max(1, center - BACKWARD_CACHE);
-  const end = center + FORWARD_CACHE;
+  const start = Math.max(1, center - BACKWARD);
+  const end = center + FORWARD;
 
   cacheRange(start, end);
 
   if (end - center < 30) {
-    cacheRange(center + FORWARD_CACHE, center + FORWARD_CACHE + 50);
+    cacheRange(end, end + 50);
   }
 }
 
 
+
+/* CACHE RANGE */
 
 async function cacheRange(start, end) {
 
@@ -143,7 +164,7 @@ async function cacheRange(start, end) {
 
   for (let i = start; i <= end; i++) {
 
-    const url = `/data/c${i}.json`;
+    const url = `./data/c${i}.json`;
 
     const exists = await cache.match(url);
 
@@ -170,14 +191,15 @@ self.addEventListener("message", event => {
 
     currentChapter = data.chapter;
 
-    maintainCacheWindow(currentChapter);
+    maintainWindow(currentChapter);
   }
 
   if (data.type === "UPDATE_WINDOW") {
 
-    FORWARD_CACHE = data.forward ?? FORWARD_CACHE;
-    BACKWARD_CACHE = data.backward ?? BACKWARD_CACHE;
+    FORWARD = data.forward ?? FORWARD;
+    BACKWARD = data.backward ?? BACKWARD;
 
-    maintainCacheWindow(currentChapter);
+    maintainWindow(currentChapter);
   }
+
 });
