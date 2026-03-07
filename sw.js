@@ -1,116 +1,183 @@
-const CORE_CACHE = 'novel-core-v1';
-const FONTS_CACHE = 'novel-fonts-v1';
-const CHAPTER_CACHE = 'novel-chapters-v1';
+const STATIC_CACHE = "novel-static-v1";
+const CHAPTER_CACHE = "novel-chapters-v1";
 
-// We include manifest.json here so the salt is available offline immediately
-const CORE_ASSETS = [
-  './',
-  './index.html',
-  './style.css',
-  './script.js',
-  './decrypt.js',
-  './manifest.json' 
+const STATIC_FILES = [
+  "/",
+  "/index.html",
+  "/style.css",
+  "/script.js",
+  "/decrypt.js",
+  "/manifest.json"
 ];
 
-// Generates the correct URL based on your decrypt.js logic
-function getChapterUrl(chapterNumber) {
-  return `./data/c${chapterNumber}.json`; 
-}
+let FORWARD_CACHE = 130;
+let BACKWARD_CACHE = 20;
 
-let highestCachedChapter = 0;
+let currentChapter = 1;
 
-// 1. Install & Cache Core Assets
-self.addEventListener('install', event => {
-  self.skipWaiting();
+
+
+/* INSTALL */
+
+self.addEventListener("install", event => {
   event.waitUntil(
-    caches.open(CORE_CACHE).then(cache => cache.addAll(CORE_ASSETS))
+    caches.open(STATIC_CACHE).then(async cache => {
+
+      await cache.addAll(STATIC_FILES);
+
+      // cache google fonts css
+      try {
+        const res = await fetch(
+          "https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap"
+        );
+        await cache.put(res.url, res.clone());
+      } catch {}
+
+    })
   );
+
+  self.skipWaiting();
 });
 
-// 2. Clean up old caches on activation
-self.addEventListener('activate', event => {
+
+
+/* ACTIVATE */
+
+self.addEventListener("activate", event => {
   event.waitUntil(self.clients.claim());
 });
 
-// 3. Listen for window updates from index.html
-self.addEventListener('message', event => {
-  if (event.data && event.data.type === 'CHAPTER_CHANGED') {
-    const { chapter, forward, backward, force } = event.data;
 
-    // Update if forced via console, if SW just woke up, or if we are within 30 chapters of the edge
-    if (force || highestCachedChapter === 0 || (highestCachedChapter - chapter) < 30) {
-      event.waitUntil(updateChapterCacheWindow(chapter, forward, backward));
-    }
+
+/* FETCH */
+
+self.addEventListener("fetch", event => {
+
+  const url = new URL(event.request.url);
+
+  // chapter json files
+  if (url.pathname.startsWith("/data/c")) {
+
+    event.respondWith(chapterStrategy(event.request));
+    return;
   }
+
+  event.respondWith(cacheFirst(event.request));
 });
 
-async function updateChapterCacheWindow(currentChapter, forward, backward) {
+
+
+/* STATIC CACHE */
+
+async function cacheFirst(req) {
+
+  const cache = await caches.open(STATIC_CACHE);
+  const cached = await cache.match(req);
+
+  if (cached) return cached;
+
+  const res = await fetch(req);
+  cache.put(req, res.clone());
+
+  return res;
+}
+
+
+
+/* CHAPTER CACHE */
+
+async function chapterStrategy(req) {
+
   const cache = await caches.open(CHAPTER_CACHE);
-  const start = Math.max(1, currentChapter - backward);
-  const end = currentChapter + forward; 
 
-  const fetchPromises = [];
+  const cached = await cache.match(req);
 
-  // Fetch missing chapters in the sliding window
-  for (let i = start; i <= end; i++) {
-    const url = getChapterUrl(i);
-    const req = new Request(url);
-    
-    const isCached = await cache.match(req);
-    if (!isCached) {
-      fetchPromises.push(
-        fetch(req).then(response => {
-          if (response.ok) cache.put(req, response.clone());
-        }).catch(() => {
-          // Silently fail if offline; we'll retry when the network returns
-        })
-      );
-    }
+  if (cached) return cached;
+
+  const res = await fetch(req);
+
+  cache.put(req, res.clone());
+
+  const chapter = parseChapterNumber(req.url);
+
+  if (chapter) {
+
+    currentChapter = chapter;
+
+    maintainCacheWindow(chapter);
   }
 
-  await Promise.all(fetchPromises);
-  highestCachedChapter = end;
+  return res;
+}
 
-  // Evict chapters that have fallen out of the backward window
-  const keys = await cache.keys();
-  for (const request of keys) {
-    // Matches urls like "data/c12.json" and extracts the "12"
-    const match = request.url.match(/data\/c(\d+)\.json$/);
-    if (match) {
-      const chNum = parseInt(match[1], 10);
-      if (chNum < start || chNum > end) {
-        await cache.delete(request);
-      }
+
+
+function parseChapterNumber(url) {
+
+  const m = url.match(/c(\d+)\.json/);
+
+  return m ? parseInt(m[1]) : null;
+}
+
+
+
+/* CACHE WINDOW */
+
+async function maintainCacheWindow(center) {
+
+  const start = Math.max(1, center - BACKWARD_CACHE);
+  const end = center + FORWARD_CACHE;
+
+  cacheRange(start, end);
+
+  if (end - center < 30) {
+    cacheRange(center + FORWARD_CACHE, center + FORWARD_CACHE + 50);
+  }
+}
+
+
+
+async function cacheRange(start, end) {
+
+  const cache = await caches.open(CHAPTER_CACHE);
+
+  for (let i = start; i <= end; i++) {
+
+    const url = `/data/c${i}.json`;
+
+    const exists = await cache.match(url);
+
+    if (!exists) {
+
+      fetch(url)
+        .then(res => {
+          if (res.ok) cache.put(url, res.clone());
+        })
+        .catch(() => {});
     }
   }
 }
 
-// 4. Intercept network requests (Cache-First Strategy)
-self.addEventListener('fetch', event => {
-  const url = new URL(event.request.url);
 
-  // Auto-cache Google Fonts
-  if (url.origin === 'https://fonts.googleapis.com' || url.origin === 'https://fonts.gstatic.com') {
-    event.respondWith(
-      caches.match(event.request).then(cached => {
-        return cached || fetch(event.request).then(response => {
-          const responseClone = response.clone();
-          caches.open(FONTS_CACHE).then(cache => cache.put(event.request, responseClone));
-          return response;
-        });
-      })
-    );
-    return;
+
+/* MESSAGE API */
+
+self.addEventListener("message", event => {
+
+  const data = event.data;
+
+  if (data.type === "CACHE_AROUND") {
+
+    currentChapter = data.chapter;
+
+    maintainCacheWindow(currentChapter);
   }
 
-  // Handle all other requests (HTML, JS, CSS, manifest, and Chapter JSONs)
-  event.respondWith(
-    caches.match(event.request).then(cachedResponse => {
-      // Return cached version if it exists, otherwise go to the network
-      return cachedResponse || fetch(event.request).catch(() => {
-        // If fetch fails (offline) and not in cache, let it fail gracefully
-        console.warn('Offline and resource not cached:', event.request.url);
-      });
-    })
-  );
+  if (data.type === "UPDATE_WINDOW") {
+
+    FORWARD_CACHE = data.forward ?? FORWARD_CACHE;
+    BACKWARD_CACHE = data.backward ?? BACKWARD_CACHE;
+
+    maintainCacheWindow(currentChapter);
+  }
 });
