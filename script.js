@@ -1,7 +1,3 @@
-/* ================================
-   ICONS  (currentColor → works in dark mode)
-================================ */
-
 const Icons = {
   left:  `<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><polyline points="15 18 9 12 15 6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   right: `<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><polyline points="9 6 15 12 9 18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
@@ -33,6 +29,21 @@ let maxCached = 0;
 
 
 /* ================================
+   SW MESSAGING
+   Uses serviceWorker.ready → reg.active so the message reaches
+   the SW even before it has claimed the page (controller = null
+   on first install / first load).
+================================ */
+
+function swMessage(data) {
+  if (!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.ready
+    .then(reg => { if (reg.active) reg.active.postMessage(data); })
+    .catch(() => {});
+}
+
+
+/* ================================
    PREFETCH MANAGEMENT
 ================================ */
 
@@ -43,15 +54,13 @@ function managePrefetch(chap, force = false) {
     minCached = Math.max(1, chap - PREFETCH_BEHIND);
     maxCached = Math.min(totalChapters, chap + PREFETCH_AHEAD);
 
-    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-      navigator.serviceWorker.controller.postMessage({
-        type:    'PREFETCH_CHAPTERS',
-        current: chap,
-        total:   totalChapters,
-        ahead:   PREFETCH_AHEAD,
-        behind:  PREFETCH_BEHIND,
-      });
-    }
+    swMessage({
+      type:    'PREFETCH_CHAPTERS',
+      current: chap,
+      total:   totalChapters,
+      ahead:   PREFETCH_AHEAD,
+      behind:  PREFETCH_BEHIND,
+    });
   }
 }
 
@@ -121,33 +130,22 @@ window.cacheAhead = function(n) {
     return;
   }
   const target = Math.min(totalChapters, currentChapter + n);
-  if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-    navigator.serviceWorker.controller.postMessage({
-      type: 'PREFETCH_CHAPTERS',
-      current: currentChapter,
-      total:   totalChapters,
-      ahead:   n,
-      behind:  0,
-    });
-    maxCached = Math.max(maxCached, target);
-    console.log(`%ccacheAhead%c: requesting ch ${currentChapter} → ch ${target}`, C.accent, C.reset);
-  } else {
-    console.warn('Service Worker not ready yet.');
-  }
+  swMessage({
+    type:    'PREFETCH_CHAPTERS',
+    current: currentChapter,
+    total:   totalChapters,
+    ahead:   n,
+    behind:  0,
+  });
+  maxCached = Math.max(maxCached, target);
+  console.log(`%ccacheAhead%c: requesting ch ${currentChapter} → ch ${target}`, C.accent, C.reset);
 };
 
 /** Delete cached chapter files that come before the current chapter. */
 window.clearPrevious = function() {
-  if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-    navigator.serviceWorker.controller.postMessage({
-      type:    'CLEAR_BEFORE',
-      current: currentChapter,
-    });
-    minCached = currentChapter;
-    console.log(`%cclearPrevious%c: requested deletion of chapters < ${currentChapter}`, C.accent, C.reset);
-  } else {
-    console.warn('Service Worker not ready yet.');
-  }
+  swMessage({ type: 'CLEAR_BEFORE', current: currentChapter });
+  minCached = currentChapter;
+  console.log(`%cclearPrevious%c: requested deletion of chapters < ${currentChapter}`, C.accent, C.reset);
 };
 
 /**
@@ -411,6 +409,13 @@ async function ensurePasswordAndFetch(targetChapter) {
 
 document.addEventListener('DOMContentLoaded', async () => {
 
+  /* ── Register Service Worker FIRST so it can start caching immediately ── */
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js')
+      .then(reg => console.log('[SW] registered', reg.scope))
+      .catch(err => console.error('[SW] registration failed', err));
+  }
+
   /* Icons */
   ['navLeftTop','navLeftBottom'].forEach(id  => document.getElementById(id).innerHTML  = Icons.left);
   ['navRightTop','navRightBottom'].forEach(id => document.getElementById(id).innerHTML = Icons.right);
@@ -460,12 +465,4 @@ document.addEventListener('DOMContentLoaded', async () => {
   const { chapter, scroll } = determineDesiredInitial();
   const initialText = await ensurePasswordAndFetch(chapter);
   loadDecryptedChapter(chapter, scroll, initialText);
-
-  /* Service Worker */
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js')
-      .then(reg => console.log('[SW] registered', reg.scope))
-      .catch(err => console.error('[SW] registration failed', err));
-  }
 });
-
