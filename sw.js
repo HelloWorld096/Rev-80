@@ -1,8 +1,5 @@
 /* ================================
    SERVICE WORKER
-   - Caches app shell + fonts on install
-   - Chapter data: cache-first
-   - Prefetch: concurrent (8 parallel), sliding window
 ================================ */
 
 const DATA_CACHE   = 'novel-data-v2';
@@ -20,32 +17,39 @@ const APP_SHELL = [
   '/manifest.json',
 ];
 
-/* ---- helpers ---- */
 
+/* ================================
+   HELPERS
+================================ */
+
+/** Fetch and cache Google Fonts CSS + all referenced font files. */
 async function cacheFonts() {
   try {
-    const cache = await caches.open(FONTS_CACHE);
-
-    // Cache the CSS sheet first
-    const cssRes = await fetch(FONT_CSS_URL);
+    const fontsCache = await caches.open(FONTS_CACHE);
+    const cssRes     = await fetch(FONT_CSS_URL);
     if (!cssRes.ok) return;
-    await cache.put(FONT_CSS_URL, cssRes.clone());
 
-    // Extract font file URLs from the CSS and cache each one
+    const cssClone = cssRes.clone();
+    await fontsCache.put(FONT_CSS_URL, cssClone);
+
     const css      = await cssRes.text();
     const fontUrls = [...css.matchAll(/url\(([^)]+)\)/g)].map(m => m[1]);
 
     await Promise.allSettled(
       fontUrls.map(url =>
-        fetch(url).then(r => { if (r.ok) cache.put(url, r); }).catch(() => {})
+        fetch(url)
+          .then(r => { if (r.ok) fontsCache.put(url, r); })
+          .catch(() => {})
       )
     );
-  } catch (_) { /* offline at install time — SW fetch handler covers later */ }
+  } catch (_) {
+    // Offline at install time — runtime handler below covers it
+  }
 }
 
 /**
- * Fetch URLs with a bounded concurrency pool.
- * Skips URLs that are already cached.
+ * Prefetch a list of URLs into DATA_CACHE with bounded concurrency.
+ * Already-cached URLs are skipped without hitting the network.
  */
 async function prefetchConcurrent(urls, concurrency = 8) {
   const cache = await caches.open(DATA_CACHE);
@@ -55,18 +59,34 @@ async function prefetchConcurrent(urls, concurrency = 8) {
     while (idx < urls.length) {
       const url = urls[idx++];
       try {
-        if (await cache.match(url)) continue;          // already cached
+        if (await cache.match(url)) continue;
         const res = await fetch(url);
         if (res.ok) await cache.put(url, res);
       } catch (_) {}
     }
   }
 
-  const pool = Array.from({ length: Math.min(concurrency, urls.length) }, worker);
-  await Promise.all(pool);
+  const n = Math.min(concurrency, urls.length);
+  if (n > 0) await Promise.all(Array.from({ length: n }, worker));
 }
 
-/* ---- lifecycle ---- */
+/** Delete all /data/cN.json entries where N < current from DATA_CACHE. */
+async function clearBefore(current) {
+  const cache = await caches.open(DATA_CACHE);
+  const keys  = await cache.keys();
+
+  await Promise.all(
+    keys.map(req => {
+      const match = new URL(req.url).pathname.match(/\/data\/c(\d+)\.json$/);
+      if (match && parseInt(match[1], 10) < current) return cache.delete(req);
+    })
+  );
+}
+
+
+/* ================================
+   LIFECYCLE
+================================ */
 
 self.addEventListener('install', event => {
   event.waitUntil(
@@ -81,33 +101,51 @@ self.addEventListener('activate', event => {
   const allowed = [DATA_CACHE, STATIC_CACHE, FONTS_CACHE];
   event.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.map(k => allowed.includes(k) ? null : caches.delete(k))))
+      .then(keys => Promise.all(
+        keys.map(k => allowed.includes(k) ? null : caches.delete(k))
+      ))
       .then(() => self.clients.claim())
   );
 });
 
-/* ---- prefetch message ---- */
+
+/* ================================
+   MESSAGES FROM MAIN THREAD
+================================ */
 
 self.addEventListener('message', event => {
-  if (!event.data || event.data.type !== 'PREFETCH_CHAPTERS') return;
+  if (!event.data) return;
 
-  const { current, total, ahead, behind } = event.data;
-  const start = Math.max(1, current - behind);
-  const end   = Math.min(total, current + ahead);
+  /* Sliding-window chapter prefetch */
+  if (event.data.type === 'PREFETCH_CHAPTERS') {
+    const { current, total, ahead, behind } = event.data;
+    const start = Math.max(1, current - behind);
+    const end   = Math.min(total, current + ahead);
 
-  const urls = [];
-  for (let i = start; i <= end; i++) urls.push(`/data/c${i}.json`);
+    const urls = [];
+    for (let i = start; i <= end; i++) urls.push(`/data/c${i}.json`);
 
-  event.waitUntil(prefetchConcurrent(urls, 8));
+    event.waitUntil(prefetchConcurrent(urls, 8));
+    return;
+  }
+
+  /* Clear chapters before current from cache */
+  if (event.data.type === 'CLEAR_BEFORE') {
+    event.waitUntil(clearBefore(event.data.current));
+    return;
+  }
 });
 
-/* ---- fetch strategy ---- */
+
+/* ================================
+   FETCH STRATEGIES
+================================ */
 
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
 
-  /* Navigation → network-first, fallback to shell */
+  /* ── Navigation: network-first, SW shell fallback ── */
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
@@ -120,7 +158,7 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  /* Chapter data → cache-first */
+  /* ── Chapter data: cache-first ── */
   if (url.pathname.startsWith('/data/')) {
     event.respondWith(
       caches.match(event.request).then(cached =>
@@ -133,20 +171,22 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  /* Fonts → cache-first (already warmed on install) */
+  /* ── Fonts: cache-first (warmed on install) ── */
   if (url.hostname.includes('gstatic') || url.hostname.includes('googleapis')) {
     event.respondWith(
       caches.match(event.request).then(cached =>
-        cached || fetch(event.request).then(res => {
-          if (res.ok) caches.open(FONTS_CACHE).then(c => c.put(event.request, res.clone()));
-          return res;
-        }).catch(() => cached)
+        cached || fetch(event.request)
+          .then(res => {
+            if (res.ok) caches.open(FONTS_CACHE).then(c => c.put(event.request, res.clone()));
+            return res;
+          })
+          .catch(() => cached)
       )
     );
     return;
   }
 
-  /* Static assets → stale-while-revalidate */
+  /* ── Static assets: stale-while-revalidate ── */
   event.respondWith(
     caches.match(event.request).then(cached => {
       const network = fetch(event.request).then(res => {
