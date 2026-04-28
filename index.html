@@ -38,8 +38,18 @@
 
     <div id="chapterPopup" class="popup-overlay" role="dialog" aria-modal="true" aria-label="Chapter selection">
       <div class="popup-content">
-        <h2>Chapter Selection</h2>
+
+        <div class="popup-header">
+          <h2>Chapters</h2>
+          <div class="popup-pager">
+            <button id="popupPrevPage" aria-label="Previous page">&#8249;</button>
+            <span   id="popupPageInfo"></span>
+            <button id="popupNextPage" aria-label="Next page">&#8250;</button>
+          </div>
+        </div>
+
         <div id="chapterList" class="chapter-list"></div>
+
       </div>
     </div>
   </body>
