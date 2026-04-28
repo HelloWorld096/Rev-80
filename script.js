@@ -1,42 +1,52 @@
+/* ================================
+   ICONS  (currentColor → works in dark mode)
+================================ */
+
 const Icons = {
   left:  `<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><polyline points="15 18 9 12 15 6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   right: `<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><polyline points="9 6 15 12 9 18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
 };
 
 
+/* ================================
+   GLOBAL STATE
+================================ */
+
 const totalChapters = 2334;
 
 let currentChapter = 1;
 let password       = null;
-
-let popupInitialized = false;
-let scrollTimeout    = null;
-let loading          = false;
+let loading        = false;
+let scrollTimeout  = null;
 
 
-const PREFETCH_AHEAD  = 150;
-const PREFETCH_BEHIND = 50;
-const PREFETCH_REFILL = 50;  // trigger when remaining-forward drops below this
+/* ================================
+   PREFETCH CONFIG  (mutable — setDefaults() can change these)
+================================ */
+
+let PREFETCH_AHEAD  = 150;   // chapters to cache forward
+let PREFETCH_BEHIND = 50;    // chapters to keep behind
+let PREFETCH_REFILL = 50;    // re-trigger when remaining-ahead drops below this
 
 let minCached = Infinity;
 let maxCached = 0;
 
-function managePrefetch(currentChap, force = false) {
-  const remainingForward = maxCached - currentChap;
 
-  if (
-    force          ||
-    maxCached === 0 ||
-    remainingForward < PREFETCH_REFILL ||
-    currentChap < minCached
-  ) {
-    minCached = Math.max(1, currentChap - PREFETCH_BEHIND);
-    maxCached = Math.min(totalChapters, currentChap + PREFETCH_AHEAD);
+/* ================================
+   PREFETCH MANAGEMENT
+================================ */
 
-    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+function managePrefetch(chap, force = false) {
+  const remainingAhead = maxCached - chap;
+
+  if (force || maxCached === 0 || remainingAhead < PREFETCH_REFILL || chap < minCached) {
+    minCached = Math.max(1, chap - PREFETCH_BEHIND);
+    maxCached = Math.min(totalChapters, chap + PREFETCH_AHEAD);
+
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
       navigator.serviceWorker.controller.postMessage({
         type:    'PREFETCH_CHAPTERS',
-        current: currentChap,
+        current: chap,
         total:   totalChapters,
         ahead:   PREFETCH_AHEAD,
         behind:  PREFETCH_BEHIND,
@@ -45,50 +55,176 @@ function managePrefetch(currentChap, force = false) {
   }
 }
 
-/* Console helper — call updateCacheWindow() in DevTools */
-window.updateCacheWindow = function(customAhead = PREFETCH_AHEAD, customBehind = PREFETCH_BEHIND) {
-  managePrefetch(currentChapter, true);
-  return `Cache window: ${Math.max(1, currentChapter - customBehind)} → ${Math.min(totalChapters, currentChapter + customAhead)}`;
+
+/* ================================
+   CONSOLE STATS  (printed on every chapter change)
+================================ */
+
+function printConsoleStats() {
+  console.clear();
+
+  const ahead = maxCached - currentChapter;
+  const behind = currentChapter - minCached;
+  const until = Math.max(0, ahead - PREFETCH_REFILL);
+  const totalCached = maxCached - minCached + 1;
+
+  // Header
+  console.log(`%c NOVEL READER STATE: Chapter ${currentChapter} / ${totalChapters}`, 'font-weight: bold; color: #617AC1;');
+
+  // Table Data
+  console.table({
+    "Current Position": { value: currentChapter, detail: `of ${totalChapters}` },
+    "Cache Range": { value: `${minCached} → ${maxCached}`, detail: `(${totalCached} ch total)` },
+    "Buffer Ahead": { value: ahead, detail: ahead < PREFETCH_REFILL ? "TRIGGERED" : `Refill at < ${PREFETCH_REFILL}` },
+    "Next Update": { value: until === 0 ? "NOW" : `${until} chapters`, detail: `at ch ${currentChapter + until}` }
+  });
+
+  printHelp();
+}
+
+function printHelp() {
+  console.group("%cAVAILABLE COMMANDS", "color: #617AC1; font-weight: bold;");
+
+  const commands = [
+    ["cacheAhead(n)", "Cache N chapters forward"],
+    ["clearPrevious()", "Wipe cache before current chapter"],
+    ["setDefaults(x,y,z)", "Update (Ahead, Behind, Trigger)"],
+    ["updateCacheWindow()", "Force immediate re-cache"],
+    ["printHelp()", "Display this list"]
+  ];
+
+  commands.forEach(([cmd, desc]) => {
+    console.log(`%c${cmd.padEnd(22)} %c| %c${desc}`, "color: #617AC1; font-family: monospace;", "color: #444;", "color: #888;");
+  });
+
+  console.groupEnd();
+
+  // Subtle footer for system values
+  console.log(
+    `%cSystem Config: Ahead=${PREFETCH_AHEAD} Behind=${PREFETCH_BEHIND} Trigger=${PREFETCH_REFILL}`,
+    "color: #555; font-size: 10px;"
+  );
+}
+
+/* ================================
+   CONSOLE API  (attached to window)
+================================ */
+
+/** Ensure n chapters ahead of current are cached. */
+window.cacheAhead = function(n) {
+  if (typeof n !== 'number' || n <= 0) {
+    console.warn('cacheAhead(n): n must be a positive number');
+    return;
+  }
+  if (n <= PREFETCH_AHEAD) {
+    console.log(`Already caching %c${PREFETCH_AHEAD}%c ahead — use n > ${PREFETCH_AHEAD} to extend.`, C.bold, C.reset);
+    return;
+  }
+  const target = Math.min(totalChapters, currentChapter + n);
+  if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+    navigator.serviceWorker.controller.postMessage({
+      type: 'PREFETCH_CHAPTERS',
+      current: currentChapter,
+      total:   totalChapters,
+      ahead:   n,
+      behind:  0,
+    });
+    maxCached = Math.max(maxCached, target);
+    console.log(`%ccacheAhead%c: requesting ch ${currentChapter} → ch ${target}`, C.accent, C.reset);
+  } else {
+    console.warn('Service Worker not ready yet.');
+  }
 };
 
+/** Delete cached chapter files that come before the current chapter. */
+window.clearPrevious = function() {
+  if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+    navigator.serviceWorker.controller.postMessage({
+      type:    'CLEAR_BEFORE',
+      current: currentChapter,
+    });
+    minCached = currentChapter;
+    console.log(`%cclearPrevious%c: requested deletion of chapters < ${currentChapter}`, C.accent, C.reset);
+  } else {
+    console.warn('Service Worker not ready yet.');
+  }
+};
 
-function saveChapterState() {
-  localStorage.setItem('lastChapter', currentChapter);
-}
+/**
+ * Update prefetch defaults and force an immediate re-cache.
+ * @param {number} x  chapters ahead
+ * @param {number} y  chapters behind
+ * @param {number} z  refill trigger (re-cache when ahead < z)
+ */
+window.setDefaults = function(x, y, z) {
+  let changed = false;
+  if (x !== undefined && typeof x === 'number') { PREFETCH_AHEAD  = x; changed = true; }
+  if (y !== undefined && typeof y === 'number') { PREFETCH_BEHIND = y; changed = true; }
+  if (z !== undefined && typeof z === 'number') { PREFETCH_REFILL = z; changed = true; }
 
-function saveScrollState() {
-  localStorage.setItem('scrollPosition', window.scrollY);
-}
-
-
-function determineDesiredInitial() {
-  const storedChapter = localStorage.getItem('lastChapter');
-  const storedScroll  = localStorage.getItem('scrollPosition');
-  const urlParams     = new URLSearchParams(window.location.search);
-  const urlChapter    = urlParams.get('chapter');
-
-  let initialChapter = 1;
-  let initialScroll  = 0;
-
-  if (urlChapter) {
-    initialChapter = parseInt(urlChapter, 10) || 1;
-    // Restore scroll only if the URL chapter matches what was last stored
-    if (storedChapter && parseInt(storedChapter, 10) === initialChapter) {
-      initialScroll = storedScroll ? parseInt(storedScroll, 10) : 0;
-    }
-  } else if (storedChapter) {
-    initialChapter = parseInt(storedChapter, 10) || 1;
-    initialScroll  = storedScroll ? parseInt(storedScroll, 10) : 0;
+  if (!changed) {
+    console.warn('setDefaults(ahead, behind, trigger): pass at least one numeric argument.');
+    return;
   }
 
-  return { chapter: initialChapter, scroll: initialScroll };
-}
+  console.log(
+    `%csetDefaults%c: ahead=%c${PREFETCH_AHEAD}%c  behind=%c${PREFETCH_BEHIND}%c  trigger=<%c${PREFETCH_REFILL}`,
+    C.accent, C.reset, C.bold, C.reset, C.bold, C.reset, C.bold
+  );
+  managePrefetch(currentChapter, true);
+  printConsoleStats();
+};
 
+/** Force a cache refresh with current defaults. */
+window.updateCacheWindow = function() {
+  managePrefetch(currentChapter, true);
+  printConsoleStats();
+};
+
+/** Print the function manual. */
+window.printHelp = printHelp;
+
+
+/* ================================
+   STORAGE
+================================ */
+
+function saveChapterState() { localStorage.setItem('lastChapter', currentChapter); }
+function saveScrollState()  { localStorage.setItem('scrollPosition', window.scrollY); }
+
+
+/* ================================
+   INITIAL STATE
+================================ */
+
+function determineDesiredInitial() {
+  const storedChap   = localStorage.getItem('lastChapter');
+  const storedScroll = localStorage.getItem('scrollPosition');
+  const urlChap      = new URLSearchParams(window.location.search).get('chapter');
+
+  let chapter = 1, scroll = 0;
+
+  if (urlChap) {
+    chapter = parseInt(urlChap, 10) || 1;
+    if (storedChap && parseInt(storedChap, 10) === chapter) {
+      scroll = storedScroll ? parseInt(storedScroll, 10) : 0;
+    }
+  } else if (storedChap) {
+    chapter = parseInt(storedChap, 10) || 1;
+    scroll  = storedScroll ? parseInt(storedScroll, 10) : 0;
+  }
+
+  return { chapter, scroll };
+}
 
 function updateUrl() {
   history.replaceState({}, '', `?chapter=${currentChapter}`);
 }
 
+
+/* ================================
+   TEXT PARSING
+================================ */
 
 function parseChapter(text) {
   return text
@@ -100,11 +236,13 @@ function parseChapter(text) {
 }
 
 function cleanTitle(line) {
-  return line
-    .replace(/^chapter\s*\d+\s*[-—–:：.]*/i, '')
-    .trim();
+  return line.replace(/^chapter\s*\d+\s*[-—–:：.]*/i, '').trim();
 }
 
+
+/* ================================
+   FADE HELPERS
+================================ */
 
 const titleEl   = () => document.getElementById('chapterTitle');
 const contentEl = () => document.getElementById('chapterContent');
@@ -115,174 +253,211 @@ function fadeOut() {
 }
 
 function fadeIn() {
-  // Force a reflow so the transition fires even if set in the same frame
-  void contentEl().offsetHeight;
+  void contentEl().offsetHeight;   // force reflow
   titleEl().classList.remove('fading');
   contentEl().classList.remove('fading');
 }
+
+
+/* ================================
+   LOAD CHAPTER
+================================ */
 
 async function loadDecryptedChapter(n, scrollPos = 0, preloadedText = null) {
   if (loading) return;
   if (n < 1 || n > totalChapters) return;
 
   loading = true;
-
-  // Disable scroll saving during transition
   if (scrollTimeout) { clearTimeout(scrollTimeout); scrollTimeout = null; }
 
   currentChapter = n;
   saveChapterState();
+  updateUrl();
 
   document.getElementById('chapterNumber').textContent       = `Chapter ${n}`;
   document.getElementById('chapterNumberBottom').textContent = `Chapter ${n}`;
 
   fadeOut();
-  updateUrl();
 
   try {
-    const txt = preloadedText || await loadChapter(n, password);
+    const txt   = preloadedText || await loadChapter(n, password);
+    const lines = txt.trim().split('\n').filter(l => l.trim().length > 0);
+    const title = cleanTitle(lines[0] || `Chapter ${n}`);
+    const body  = lines.slice(1).join('\n\n');
 
-    const lines    = txt.trim().split('\n').filter(l => l.trim().length > 0);
-    const rawTitle = lines[0] || `Chapter ${n}`;
-    const title    = cleanTitle(rawTitle);
-    const body     = lines.slice(1).join('\n\n');
-
-    titleEl().textContent   = title;
-    contentEl().innerHTML   = parseChapter(body);
-    document.title          = `${n} | ${title}`;
-
-    // Update active button in popup (if already built)
-    if (popupInitialized) {
-      document.querySelectorAll('#chapterList button').forEach(btn => {
-        btn.classList.toggle('active', Number(btn.dataset.chapter) === n);
-      });
-    }
+    titleEl().textContent = title;
+    contentEl().innerHTML = parseChapter(body);
+    document.title        = `${n} | ${title}`;
 
     managePrefetch(n);
+    printConsoleStats();
 
     requestAnimationFrame(() => {
       window.scrollTo({ top: scrollPos, behavior: 'auto' });
       fadeIn();
     });
 
-  } catch (_) {
-    titleEl().textContent   = 'Error';
-    contentEl().innerHTML   = `<p>Chapter ${n} not found or decryption failed.</p>`;
+  } catch (e) {
+    titleEl().textContent = 'Error';
+    contentEl().innerHTML = `<p>Chapter ${n} not found or decryption failed.</p>`;
     fadeIn();
+    console.error('[loadChapter]', e);
   }
 
   loading = false;
 }
 
 
+/* ================================
+   POPUP  —  paginated, 200 chapters per page
+================================ */
+
+const PAGE_SIZE = 200;
+let popupPage   = 0;
+
+function totalPopupPages() { return Math.ceil(totalChapters / PAGE_SIZE); }
+
 function openChapterPopup() {
-  const list = document.getElementById('chapterList');
-
-  if (!popupInitialized) {
-    const fragment = document.createDocumentFragment();
-
-    for (let ch = 1; ch <= totalChapters; ch++) {
-      const btn = document.createElement('button');
-      btn.textContent     = `Ch ${ch}`;
-      btn.dataset.chapter = ch;
-      if (ch === currentChapter) btn.classList.add('active');
-
-      btn.addEventListener('click', () => {
-        loadDecryptedChapter(ch);
-        closePopup();
-      });
-
-      fragment.appendChild(btn);
-    }
-
-    list.appendChild(fragment);
-    popupInitialized = true;
-  }
-
+  // Jump straight to the page that contains the current chapter
+  popupPage = Math.floor((currentChapter - 1) / PAGE_SIZE);
+  renderPopupPage();
   document.getElementById('chapterPopup').style.display = 'flex';
-
-  // Scroll the active button into view
-  requestAnimationFrame(() => {
-    const active = list.querySelector('button.active');
-    if (active) active.scrollIntoView({ block: 'nearest' });
-  });
 }
 
 function closePopup() {
   document.getElementById('chapterPopup').style.display = 'none';
 }
 
+function renderPopupPage() {
+  const list  = document.getElementById('chapterList');
+  const start = popupPage * PAGE_SIZE + 1;
+  const end   = Math.min(totalChapters, start + PAGE_SIZE - 1);
+  const pages = totalPopupPages();
+
+  // Pagination controls
+  document.getElementById('popupPageInfo').textContent =
+    `${start}–${end} of ${totalChapters}`;
+  document.getElementById('popupPrevPage').disabled = (popupPage === 0);
+  document.getElementById('popupNextPage').disabled = (popupPage >= pages - 1);
+
+  // Build buttons
+  const frag = document.createDocumentFragment();
+  for (let ch = start; ch <= end; ch++) {
+    const btn = document.createElement('button');
+    btn.textContent     = `${ch}`;
+    btn.dataset.chapter = ch;
+
+    if (ch === currentChapter) {
+      btn.classList.add('active');
+    } else if (ch >= minCached && ch <= maxCached) {
+      btn.classList.add('cached');
+    }
+
+    btn.addEventListener('click', () => {
+      loadDecryptedChapter(ch);
+      closePopup();
+    });
+
+    frag.appendChild(btn);
+  }
+
+  list.innerHTML = '';
+  list.appendChild(frag);
+
+  // Scroll active button into view
+  requestAnimationFrame(() => {
+    const active = list.querySelector('button.active');
+    if (active) active.scrollIntoView({ block: 'nearest' });
+  });
+}
+
+
+/* ================================
+   PASSWORD
+================================ */
 
 async function ensurePasswordAndFetch(targetChapter) {
-  let storedPassword = localStorage.getItem('novelKey');
+  let stored = localStorage.getItem('novelKey');
 
   while (true) {
     try {
-      if (!storedPassword) {
-        storedPassword = prompt('Enter decryption password:');
-        if (!storedPassword) throw new Error('Cancelled');
+      if (!stored) {
+        stored = prompt('Enter decryption password:');
+        if (stored === null) {
+          // User dismissed — keep prompting (required to read the novel)
+          stored = null;
+          continue;
+        }
       }
 
-      const txt = await loadChapter(targetChapter, storedPassword);
+      const txt = await loadChapter(targetChapter, stored);
 
-      password = storedPassword;
+      password = stored;
       localStorage.setItem('novelKey', password);
-
       return txt;
 
     } catch (_) {
-      storedPassword = null;
+      stored = null;
       localStorage.removeItem('novelKey');
-      alert('Invalid password. Try again.');
+      alert('Wrong password — try again.');
     }
   }
 }
 
 
+/* ================================
+   INIT
+================================ */
+
 document.addEventListener('DOMContentLoaded', async () => {
 
   /* Icons */
-  document.getElementById('navLeftTop').innerHTML    = Icons.left;
-  document.getElementById('navRightTop').innerHTML   = Icons.right;
-  document.getElementById('navLeftBottom').innerHTML = Icons.left;
-  document.getElementById('navRightBottom').innerHTML = Icons.right;
+  ['navLeftTop','navLeftBottom'].forEach(id  => document.getElementById(id).innerHTML  = Icons.left);
+  ['navRightTop','navRightBottom'].forEach(id => document.getElementById(id).innerHTML = Icons.right);
 
-  /* Nav buttons */
-  document.getElementById('navLeftTop').onclick    = () => loadDecryptedChapter(currentChapter - 1);
-  document.getElementById('navLeftBottom').onclick = () => loadDecryptedChapter(currentChapter - 1);
-  document.getElementById('navRightTop').onclick   = () => loadDecryptedChapter(currentChapter + 1);
+  /* Chapter navigation */
+  document.getElementById('navLeftTop').onclick     = () => loadDecryptedChapter(currentChapter - 1);
+  document.getElementById('navLeftBottom').onclick  = () => loadDecryptedChapter(currentChapter - 1);
+  document.getElementById('navRightTop').onclick    = () => loadDecryptedChapter(currentChapter + 1);
   document.getElementById('navRightBottom').onclick = () => loadDecryptedChapter(currentChapter + 1);
 
-  /* Chapter picker */
+  /* Popup open */
   document.getElementById('chapterNumber').onclick       = openChapterPopup;
   document.getElementById('chapterNumberBottom').onclick = openChapterPopup;
 
-  /* Close popup when clicking the dark overlay (not the content box) */
+  /* Close popup on backdrop click */
   document.getElementById('chapterPopup').addEventListener('click', e => {
     if (e.target === document.getElementById('chapterPopup')) closePopup();
   });
 
-  /* Keyboard: Escape closes popup, arrows navigate */
+  /* Popup pagination */
+  document.getElementById('popupPrevPage').addEventListener('click', () => {
+    if (popupPage > 0) { popupPage--; renderPopupPage(); }
+  });
+  document.getElementById('popupNextPage').addEventListener('click', () => {
+    if (popupPage < totalPopupPages() - 1) { popupPage++; renderPopupPage(); }
+  });
+
+  /* Keyboard */
   document.addEventListener('keydown', e => {
-    const popup = document.getElementById('chapterPopup');
-    if (popup.style.display === 'flex') {
-      if (e.key === 'Escape') { closePopup(); return; }
+    const popupOpen = document.getElementById('chapterPopup').style.display === 'flex';
+    if (popupOpen) {
+      if (e.key === 'Escape') closePopup();
+      return;
     }
     if (e.key === 'ArrowRight' || e.key === 'ArrowDown') loadDecryptedChapter(currentChapter + 1);
     if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   loadDecryptedChapter(currentChapter - 1);
   });
 
-  /* Debounced scroll save */
+  /* Scroll save (debounced, suppressed mid-load) */
   window.addEventListener('scroll', () => {
-    if (loading) return;                         // don't save mid-transition
+    if (loading) return;
     if (scrollTimeout) clearTimeout(scrollTimeout);
     scrollTimeout = setTimeout(saveScrollState, 250);
   }, { passive: true });
 
-  /* Resolve starting state */
+  /* Resolve start */
   const { chapter, scroll } = determineDesiredInitial();
-
-  /* Prompt for password (once), then load */
   const initialText = await ensurePasswordAndFetch(chapter);
   loadDecryptedChapter(chapter, scroll, initialText);
 
@@ -292,288 +467,5 @@ document.addEventListener('DOMContentLoaded', async () => {
       .then(reg => console.log('[SW] registered', reg.scope))
       .catch(err => console.error('[SW] registration failed', err));
   }
-});  ) {
-
-    minCached = Math.max(1, currentChap - behind);
-    maxCached = Math.min(totalChapters, currentChap + ahead);
-
-    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-
-      console.log(`[Prefetch] Triggered for Ch ${currentChap}. Window: ${minCached} to ${maxCached}`);
-
-      navigator.serviceWorker.controller.postMessage({
-        type: 'PREFETCH_CHAPTERS',
-        current: currentChap,
-        total: totalChapters,
-        ahead,
-        behind
-      });
-
-    }
-  }
-}
-
-window.updateCacheWindow = function(customAhead = 130, customBehind = 20) {
-
-  console.log(`[Console] Forcing cache update: ${customAhead} forward, ${customBehind} backward.`);
-
-  managePrefetch(currentChapter, true, customAhead, customBehind);
-
-  return `Caching commanded for window: ${
-    Math.max(1, currentChapter - customBehind)
-  } to ${
-    Math.min(totalChapters, currentChapter + customAhead)
-  }`;
-};
-
-
-function saveChapterState() {
-  localStorage.setItem("lastChapter", currentChapter);
-}
-
-function saveScrollState() {
-  localStorage.setItem("scrollPosition", window.scrollY);
-}
-
-
-function determineDesiredInitial() {
-
-  const storedChapter = localStorage.getItem("lastChapter");
-  const storedScroll = localStorage.getItem("scrollPosition");
-
-  const urlParams = new URLSearchParams(window.location.search);
-  const urlChapter = urlParams.get("chapter");
-
-  let initialChapter = 1;
-  let initialScroll = 0;
-
-  if (urlChapter) {
-
-    initialChapter = parseInt(urlChapter, 10) || 1;
-
-    if (storedChapter && parseInt(storedChapter, 10) === initialChapter) {
-      initialScroll = storedScroll ? parseInt(storedScroll, 10) : 0;
-    }
-
-  } else if (storedChapter) {
-
-    initialChapter = parseInt(storedChapter, 10) || 1;
-    initialScroll = storedScroll ? parseInt(storedScroll, 10) : 0;
-
-  }
-
-  return { chapter: initialChapter, scroll: initialScroll };
-}
-
-
-function updateUrl() {
-
-  const params = new URLSearchParams();
-  params.set("chapter", currentChapter);
-
-  history.replaceState({}, "", `?${params}`);
-}
-
-
-
-function parseChapter(text) {
-
-  return text
-    .split("\n")
-    .map(l => l.trim())
-    .filter(l => l.length > 0)
-    .map(l => `<p>${l}</p>`)
-    .join("");
-
-}
-
-function cleanTitle(line) {
-
-  return line
-    .replace(/^chapter\s*\d+\s*[-—–:：.]*/i, "")
-    .trim();
-
-}
-
-
-async function loadDecryptedChapter(n, scrollPos = 0, preloadedText = null) {
-
-  if (loading) return;
-  if (n < 1 || n > totalChapters) return;
-
-  loading = true;
-
-  currentChapter = n;
-
-  saveChapterState();
-
-  document.getElementById("chapterNumber").textContent = `Chapter ${n}`;
-  document.getElementById("chapterNumberBottom").textContent = `Chapter ${n}`;
-
-  document.getElementById("chapterTitle").textContent = "";
-  document.getElementById("chapterContent").innerHTML = `<p>Loading...</p>`;
-
-  updateUrl();
-
-  try {
-
-    const txt = preloadedText || await loadChapter(n, password);
-
-    const lines = txt
-      .trim()
-      .split("\n")
-      .filter(l => l.trim().length > 0);
-
-    const rawTitle = lines[0] || `Chapter ${n}`;
-    const title = cleanTitle(rawTitle);
-
-    const contentOnly = lines.slice(1).join("\n\n");
-
-    document.getElementById("chapterTitle").textContent = title;
-    document.getElementById("chapterContent").innerHTML = parseChapter(contentOnly);
-
-    document.title = `${n} | ${title}`;
-
-    managePrefetch(n);
-
-    requestAnimationFrame(() => {
-      window.scrollTo({ top: scrollPos, behavior: "auto" });
-    });
-
-  }
-  catch (e) {
-
-    document.getElementById("chapterTitle").textContent = "Error";
-
-    document.getElementById("chapterContent").innerHTML =
-      `<p>Chapter ${n} not found or decryption failed.</p>`;
-
-  }
-
-  loading = false;
-}
-
-
-function openChapterPopup() {
-
-  const list = document.getElementById("chapterList");
-
-  if (!popupInitialized) {
-
-    const fragment = document.createDocumentFragment();
-
-    for (let chapter = 1; chapter <= totalChapters; chapter++) {
-
-      const btn = document.createElement("button");
-
-      btn.textContent = `Ch ${chapter}`;
-      btn.dataset.chapter = chapter;
-
-      btn.onclick = () => {
-
-        loadDecryptedChapter(chapter);
-        document.getElementById("chapterPopup").style.display = "none";
-
-      };
-
-      fragment.appendChild(btn);
-
-    }
-
-    list.appendChild(fragment);
-
-    popupInitialized = true;
-  }
-
-  document.getElementById("chapterPopup").style.display = "flex";
-}
-
-
-
-async function ensurePasswordAndFetch(targetChapter) {
-
-  let storedPassword = localStorage.getItem("novelKey");
-
-  while (true) {
-
-    try {
-
-      if (!storedPassword) {
-
-        storedPassword = prompt("Enter decryption password:");
-        if (!storedPassword) throw new Error("Cancelled");
-
-      }
-
-      const txt = await loadChapter(targetChapter, storedPassword);
-
-      password = storedPassword;
-
-      localStorage.setItem("novelKey", password);
-
-      return txt;
-
-    }
-    catch {
-
-      storedPassword = null;
-
-      localStorage.removeItem("novelKey");
-
-      alert("Invalid password. Try again.");
-
-    }
-
-  }
-}
-
-
-document.addEventListener("DOMContentLoaded", async () => {
-
-  document.getElementById("navLeftTop").innerHTML = Icons.left;
-  document.getElementById("navRightTop").innerHTML = Icons.right;
-  document.getElementById("navLeftBottom").innerHTML = Icons.left;
-  document.getElementById("navRightBottom").innerHTML = Icons.right;
-
-  document.getElementById("navLeftTop").onclick =
-    () => loadDecryptedChapter(currentChapter - 1);
-
-  document.getElementById("navLeftBottom").onclick =
-    () => loadDecryptedChapter(currentChapter - 1);
-
-  document.getElementById("navRightTop").onclick =
-    () => loadDecryptedChapter(currentChapter + 1);
-
-  document.getElementById("navRightBottom").onclick =
-    () => loadDecryptedChapter(currentChapter + 1);
-
-  document.getElementById("chapterNumber").onclick = openChapterPopup;
-  document.getElementById("chapterNumberBottom").onclick = openChapterPopup;
-
-
-  /* Scroll save (debounced) */
-
-  window.addEventListener("scroll", () => {
-
-    if (scrollTimeout) clearTimeout(scrollTimeout);
-
-    scrollTimeout = setTimeout(saveScrollState, 300);
-
-  });
-
-
-  /* Determine starting chapter */
-
-  const { chapter, scroll } = determineDesiredInitial();
-
-
-  /* Verify password */
-
-  const initialText = await ensurePasswordAndFetch(chapter);
-
-
-  /* Load chapter */
-
-  loadDecryptedChapter(chapter, scroll, initialText);
-
 });
+
