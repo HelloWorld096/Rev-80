@@ -1,41 +1,35 @@
 :root {
-  --light-bg-color:   #f9f9f9;
-  --light-text-color: #111;
-  --dark-bg-color:    #010101;
-  --dark-text-color:  #C5C5C5;
-  --accent-color:     #617AC1;
+  --light-bg:     #f9f9f9;
+  --light-text:   #111;
+  --dark-bg:      #010101;
+  --dark-text:    #C5C5C5;
+  --accent:       #617AC1;
+  --accent-dim:   rgba(97,122,193,0.18);
+  --border-light: #ddd;
+  --border-dark:  #333;
 }
 
-*, *::before, *::after {
-  box-sizing: border-box;
-}
+*, *::before, *::after { box-sizing: border-box; }
 
 body {
   margin: 0;
   font-family: 'Inter', sans-serif;
-  background-color: var(--light-bg-color);
-  color: var(--light-text-color);
+  background: var(--light-bg);
+  color: var(--light-text);
   overflow-x: hidden;
-  max-width: 100%;
   -webkit-text-size-adjust: 100%;
 }
 
+/* ── layout ── */
+
 header, footer {
   padding: 10px;
-  background: var(--light-bg-color);
+  background: var(--light-bg);
+  border-color: var(--border-light);
   z-index: 10;
-  border-color: #ddd;
 }
-
-header {
-  top: 0;
-  border-bottom: 1px solid;
-}
-
-footer {
-  bottom: 0;
-  border-top: 1px solid;
-}
+header { border-bottom: 1px solid; }
+footer { border-top:    1px solid; }
 
 main {
   padding: 20px 16px 60px;
@@ -43,19 +37,16 @@ main {
   min-height: 700px;
 }
 
-/* ---------- content fade ---------- */
+/* ── content fade on chapter change ── */
 
 #chapterTitle,
 #chapterContent {
   transition: opacity 0.12s ease;
 }
-
 #chapterTitle.fading,
-#chapterContent.fading {
-  opacity: 0;
-}
+#chapterContent.fading { opacity: 0; }
 
-/* ---------- nav ---------- */
+/* ── nav bar ── */
 
 .nav {
   display: flex;
@@ -64,38 +55,38 @@ main {
   font-size: 14px;
 }
 
-.nav button {
+.nav > button {
   background: none;
   border: none;
-  font-size: 18px;
   cursor: pointer;
-  /* SVGs inside use currentColor so they inherit this */
-  color: var(--light-text-color);
-  padding: 4px;
-  line-height: 0;
+  color: var(--light-text);
+  /* 44 × 44 minimum touch target */
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
 }
 
 #chapterNumber,
 #chapterNumberBottom {
   cursor: pointer;
   user-select: none;
+  padding: 8px 4px;   /* easier tap */
 }
 
-h1 {
-  font-size: 18px;
-  margin-bottom: 12px;
-}
+h1 { font-size: 18px; margin-bottom: 12px; }
+p  { margin: 0.9em 0; }
 
-p {
-  margin: 0.9em 0;
-}
-
-/* ---------- popup ---------- */
+/* ════════════════════════════════════════
+   POPUP — desktop: centered modal
+   ════════════════════════════════════════ */
 
 .popup-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0,0,0,0.5);
   display: none;
   align-items: center;
   justify-content: center;
@@ -104,90 +95,219 @@ p {
 
 .popup-content {
   background: white;
-  padding: 20px;
-  border-radius: 8px;
-  max-height: 80%;
-  overflow-y: auto;
-  width: 80%;
-  max-width: 400px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  border: 3px solid white;
-  /* stop clicks inside from closing the popup */
-  position: relative;
+  padding: 16px 20px 20px;
+  border-radius: 12px;
+  max-height: 82vh;
+  width: 88%;
+  max-width: 440px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* slide-in animation plays each time overlay becomes visible */
+  animation: popup-in 0.18s ease;
 }
+
+@keyframes popup-in {
+  from { opacity: 0; transform: scale(0.96) translateY(6px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0);   }
+}
+
+/* ── popup header row ── */
+
+.popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.popup-header h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.popup-pager {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.popup-pager button {
+  background: none;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  width: 34px;
+  height: 34px;
+  font-size: 20px;
+  cursor: pointer;
+  color: var(--light-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+}
+.popup-pager button:disabled { opacity: 0.25; cursor: default; }
+
+#popupPageInfo {
+  font-size: 11px;
+  color: #888;
+  min-width: 76px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* ── chapter grid ── */
 
 .chapter-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-  gap: 8px;
-  padding: 10px 0;
+  grid-template-columns: repeat(auto-fill, minmax(68px, 1fr));
+  gap: 7px;
+  overflow-y: auto;
+  /* thin scrollbar on desktop */
+  scrollbar-width: thin;
+  scrollbar-color: #ccc transparent;
+  -webkit-overflow-scrolling: touch;
 }
 
 .chapter-list button {
   background: #f0f0f0;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  padding: 10px;
-  font-size: 14px;
+  border: 1.5px solid #ccc;
+  border-radius: 6px;
+  padding: 10px 4px;
+  min-height: 40px;
+  font-size: 13px;
   cursor: pointer;
-  color: var(--light-text-color);
-  transition: background 0.1s, color 0.1s;
+  color: var(--light-text);
+  transition: background 0.08s, color 0.08s, border-color 0.08s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.chapter-list button:hover {
-  background: #e0e0e0;
-}
+.chapter-list button:active { opacity: 0.7; }
 
+/* current chapter — full accent */
 .chapter-list button.active {
-  background-color: var(--accent-color);
-  color: white;
-  border-color: var(--accent-color);
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
 }
 
-/* ---------- dark mode ---------- */
+/* cached chapters — accent border + tint */
+.chapter-list button.cached {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  color: var(--accent);
+}
 
-@media (prefers-color-scheme: dark) {
+/* ════════════════════════════════════════
+   POPUP — mobile: bottom sheet
+   ════════════════════════════════════════ */
 
-  body {
-    background-color: var(--dark-bg-color);
-    color: var(--dark-text-color);
-  }
-
-  header, footer {
-    background: var(--dark-bg-color);
-    border-color: #333;
-  }
-
-  /* Nav buttons inherit color: dark-text-color from .nav button */
-  .nav button {
-    color: var(--dark-text-color);
-  }
-
-  main {
-    background-color: var(--dark-bg-color);
-    color: var(--dark-text-color);
-  }
+@media (max-width: 560px) {
 
   .popup-overlay {
-    background: rgba(0, 0, 0, 0.75);
+    align-items: flex-end;
+    justify-content: stretch;
   }
 
   .popup-content {
-    background: #111;
-    border-color: #111;
+    width: 100%;
+    max-width: 100%;
+    border-radius: 20px 20px 0 0;
+    max-height: 80vh;
+    /* respect iPhone home bar */
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+    /* slide up from bottom */
+    animation: sheet-in 0.22s cubic-bezier(0.32, 0.72, 0, 1);
   }
 
-  .popup-content > h2 {
-    color: var(--dark-text-color);
+  /* drag handle pill */
+  .popup-content::before {
+    content: '';
+    display: block;
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: #ccc;
+    margin: 0 auto 4px;
+    flex-shrink: 0;
+  }
+
+  @keyframes sheet-in {
+    from { transform: translateY(100%); }
+    to   { transform: translateY(0);   }
+  }
+
+  /* tighter header on small screens */
+  .popup-header h2 { font-size: 14px; }
+
+  .popup-pager button {
+    width: 40px;
+    height: 40px;
+    font-size: 22px;
+  }
+
+  #popupPageInfo { font-size: 10px; min-width: 64px; }
+
+  /* 4 columns on narrow phones — bigger tap targets */
+  .chapter-list {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
   }
 
   .chapter-list button {
-    background: #1a1a1a;
-    border-color: #444;
-    color: var(--dark-text-color);
-  }
-
-  .chapter-list button:hover {
-    background: #2a2a2a;
+    min-height: 44px;
+    font-size: 13px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 }
+
+/* very narrow phones (≤ 360px) → 3 columns */
+@media (max-width: 360px) {
+  .chapter-list {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* ════════════════════════════════════════
+   DARK MODE
+   ════════════════════════════════════════ */
+
+@media (prefers-color-scheme: dark) {
+
+  body { background: var(--dark-bg); color: var(--dark-text); }
+
+  header, footer {
+    background: var(--dark-bg);
+    border-color: var(--border-dark);
+  }
+
+  .nav > button     { color: var(--dark-text); }
+
+  .popup-content    { background: #0f0f0f; }
+  .popup-content::before { background: #333; }    /* drag handle */
+  .popup-header h2  { color: var(--dark-text); }
+  .popup-pager button { border-color: #444; color: var(--dark-text); }
+  #popupPageInfo    { color: #555; }
+
+  .chapter-list {
+    scrollbar-color: #333 transparent;
+  }
+
+  .chapter-list button {
+    background: #111;
+    border-color: #3a3a3a;
+    color: var(--dark-text);
+  }
+  .chapter-list button:active           { opacity: 0.6; }
+  .chapter-list button.cached           { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
+  .chapter-list button.active           { background: var(--accent); color: #fff; border-color: var(--accent); }
+}
+
