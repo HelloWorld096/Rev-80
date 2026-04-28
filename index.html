@@ -5,11 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Novel Reader</title>
 
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <!--
+      Google Fonts <link> tags removed.
+      Inter is now fetched once, stored in IndexedDB as ArrayBuffers,
+      and injected via a programmatic @font-face <style> tag on every
+      subsequent load — including fully offline visits.
+      style.css falls back to system-ui / sans-serif until the font loads.
+    -->
 
     <link rel="stylesheet" href="style.css">
+
+    <!-- IDB utilities must load before decrypt.js uses idbGet / idbPut -->
+    <script src="idb.js"></script>
     <script src="decrypt.js"></script>
     <script src="script.js" defer></script>
   </head>
