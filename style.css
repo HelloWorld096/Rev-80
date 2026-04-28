@@ -1,150 +1,193 @@
-    :root {
-      --light-bg-color: #f9f9f9;
-      --light-text-color: #111;
-      --dark-bg-color: #010101;
-      --dark-text-color: #C5C5C5;
-      --accent-color: #617AC1;
-    }
+:root {
+  --light-bg-color:   #f9f9f9;
+  --light-text-color: #111;
+  --dark-bg-color:    #010101;
+  --dark-text-color:  #C5C5C5;
+  --accent-color:     #617AC1;
+}
 
-    body {
-      margin: 0;
-      font-family: 'Inter', sans-serif;
-      background-color: var(--light-bg-color);
-      color: var(--light-text-color);
-      overflow-x: hidden;
-      max-width: 100%;
-    }
+*, *::before, *::after {
+  box-sizing: border-box;
+}
 
-    header, footer {
-      padding: 10px;
-      background: white;
-      z-index: 10;
-    }
+body {
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  background-color: var(--light-bg-color);
+  color: var(--light-text-color);
+  overflow-x: hidden;
+  max-width: 100%;
+  -webkit-text-size-adjust: 100%;
+}
 
-    header { 
-      top: 0; 
-      border-bottom: 1px solid #ddd; 
-    }
+header, footer {
+  padding: 10px;
+  background: var(--light-bg-color);
+  z-index: 10;
+  border-color: #ddd;
+}
 
-    footer { 
-      bottom: 0; 
-      border-top: 1px solid #ddd; 
-    }
+header {
+  top: 0;
+  border-bottom: 1px solid;
+}
 
-    main {
-      padding: 20px 16px 60px;
-      line-height: 1.6;
-      min-height: 700px;
-      background-color: var(--light-bg-color);
-      color: var(--light-text-color);
-    }
+footer {
+  bottom: 0;
+  border-top: 1px solid;
+}
 
-    .nav {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 14px;
-    }
+main {
+  padding: 20px 16px 60px;
+  line-height: 1.7;
+  min-height: 700px;
+}
 
-    .nav button {
-      background: none;
-      border: none;
-      font-size: 18px;
-      cursor: pointer;
-    }
+/* ---------- content fade ---------- */
 
-    h1 {
-      font-size: 18px; 
-      margin-bottom: 12px; 
-    }
+#chapterTitle,
+#chapterContent {
+  transition: opacity 0.12s ease;
+}
 
-    p {
-      margin: 1em 0; 
-    }
+#chapterTitle.fading,
+#chapterContent.fading {
+  opacity: 0;
+}
 
-    .popup-overlay {
-      position: fixed; 
-      top: 0; 
-      left: 0; 
-      width: 100%; 
-      height: 100%;
-      background: rgba(0, 0, 0, 0.5);
-      display: none; 
-      align-items: center; 
-      justify-content: center;
-      z-index: 20;
-    }
+/* ---------- nav ---------- */
 
-    .popup-content {
-      background: white;
-      padding: 20px;
-      border-radius: 8px;
-      max-height: 80%;
-      overflow-y: auto;
-      width: 80%; max-width: 400px;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-      border: 3px solid white;
-    }
+.nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+}
 
-    .chapter-list {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-      gap: 10px;
-      padding-top: 10px;
-      padding-bottom: 10px;
-    }
+.nav button {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  /* SVGs inside use currentColor so they inherit this */
+  color: var(--light-text-color);
+  padding: 4px;
+  line-height: 0;
+}
 
-    .chapter-list button {
-      background: #f0f0f0;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      padding: 10px;
-      font-size: 14px;
-      cursor: pointer;
-      color: var(--light-text-color);
-    }
+#chapterNumber,
+#chapterNumberBottom {
+  cursor: pointer;
+  user-select: none;
+}
 
-    .chapter-list button.active {
-      background-color: var(--accent-color);
-      color: white;
-      border-color: var(--accent-color);
-    }
+h1 {
+  font-size: 18px;
+  margin-bottom: 12px;
+}
 
-    @media (prefers-color-scheme: dark) {
+p {
+  margin: 0.9em 0;
+}
 
-      body { 
-        background-color: var(--dark-bg-color); 
-      }
+/* ---------- popup ---------- */
 
-      header, footer { 
-        background: var(--dark-bg-color); 
-        border-color: #333; 
-      }
+.popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
 
-      .nav button svg polyline { 
-        stroke: var(--dark-text-color); 
-      }
+.popup-content {
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  max-height: 80%;
+  overflow-y: auto;
+  width: 80%;
+  max-width: 400px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  border: 3px solid white;
+  /* stop clicks inside from closing the popup */
+  position: relative;
+}
 
-      #chapterNumber, #chapterNumberBottom, .popup-content > h2 { 
-        color: var(--dark-text-color); 
-      }
+.chapter-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 8px;
+  padding: 10px 0;
+}
 
-      main { 
-        background-color: var(--dark-bg-color); 
-        color: var(--dark-text-color); 
-      }
+.chapter-list button {
+  background: #f0f0f0;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 10px;
+  font-size: 14px;
+  cursor: pointer;
+  color: var(--light-text-color);
+  transition: background 0.1s, color 0.1s;
+}
 
-      .popup-overlay { 
-        background: rgba(0, 0, 0, 0.7); 
-      }
+.chapter-list button:hover {
+  background: #e0e0e0;
+}
 
-      .popup-content { 
-        background: var(--dark-bg-color); 
-      }
+.chapter-list button.active {
+  background-color: var(--accent-color);
+  color: white;
+  border-color: var(--accent-color);
+}
 
-      .chapter-list button {
-        background: var(--dark-bg-color);
-        border-color: var(--dark-text-color);
-        color: var(--dark-text-color);
-      }
-    }
+/* ---------- dark mode ---------- */
+
+@media (prefers-color-scheme: dark) {
+
+  body {
+    background-color: var(--dark-bg-color);
+    color: var(--dark-text-color);
+  }
+
+  header, footer {
+    background: var(--dark-bg-color);
+    border-color: #333;
+  }
+
+  /* Nav buttons inherit color: dark-text-color from .nav button */
+  .nav button {
+    color: var(--dark-text-color);
+  }
+
+  main {
+    background-color: var(--dark-bg-color);
+    color: var(--dark-text-color);
+  }
+
+  .popup-overlay {
+    background: rgba(0, 0, 0, 0.75);
+  }
+
+  .popup-content {
+    background: #111;
+    border-color: #111;
+  }
+
+  .popup-content > h2 {
+    color: var(--dark-text-color);
+  }
+
+  .chapter-list button {
+    background: #1a1a1a;
+    border-color: #444;
+    color: var(--dark-text-color);
+  }
+
+  .chapter-list button:hover {
+    background: #2a2a2a;
+  }
+}
