@@ -14,49 +14,33 @@
     <script src="script.js" defer></script>
   </head>
 
-  <body style="font-family: 'Inter', sans-serif;">
+  <body>
     <header>
       <div class="nav">
-        <button id="navLeftTop"></button>
-        <span id="chapterNumber" style="cursor: pointer;">Chapter</span>
-        <button id="navRightTop"></button>
+        <button id="navLeftTop"  aria-label="Previous chapter"></button>
+        <span   id="chapterNumber">Chapter</span>
+        <button id="navRightTop" aria-label="Next chapter"></button>
       </div>
     </header>
+
     <main>
       <h1 id="chapterTitle"></h1>
       <div id="chapterContent" class="content"></div>
     </main>
+
     <footer>
       <div class="nav">
-        <button id="navLeftBottom"></button>
-        <span id="chapterNumberBottom" style="cursor: pointer;">Chapter</span>
-        <button id="navRightBottom"></button>
+        <button id="navLeftBottom"  aria-label="Previous chapter"></button>
+        <span   id="chapterNumberBottom">Chapter</span>
+        <button id="navRightBottom" aria-label="Next chapter"></button>
       </div>
     </footer>
 
-    <div id="chapterPopup" class="popup-overlay">
+    <div id="chapterPopup" class="popup-overlay" role="dialog" aria-modal="true" aria-label="Chapter selection">
       <div class="popup-content">
         <h2>Chapter Selection</h2>
         <div id="chapterList" class="chapter-list"></div>
       </div>
     </div>
-
-    <script>
-      if ('serviceWorker' in navigator) {
-
-  window.addEventListener('load', () => {
-
-    navigator.serviceWorker.register('./sw.js')
-      .then(reg => {
-        console.log("Service Worker registered:", reg);
-      })
-      .catch(err => {
-        console.error("Service Worker registration failed:", err);
-      });
-
-  });
-
-}
-    </script>
   </body>
 </html>
