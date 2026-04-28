@@ -8,13 +8,13 @@
 const SHELL_CACHE = 'app-shell-v3';
 
 const APP_SHELL = [
-  '/',
-  '/index.html',
-  '/style.css',
-  '/idb.js',
-  '/decrypt.js',
-  '/script.js',
-  '/manifest.json',
+  './',
+  './index.html',
+  './style.css',
+  ' /idb.js',
+  './decrypt.js',
+  './script.js',
+  './manifest.json',
 ];
 
 
@@ -61,10 +61,10 @@ self.addEventListener('fetch', event => {
       fetch(event.request)
         .then(res => {
           // Keep shell fresh whenever we're online
-          caches.open(SHELL_CACHE).then(c => c.put('/index.html', res.clone()));
+          caches.open(SHELL_CACHE).then(c => c.put('./index.html', res.clone()));
           return res;
         })
-        .catch(() => caches.match('/index.html'))
+        .catch(() => caches.match('./index.html'))
     );
     return;
   }
