@@ -93,7 +93,7 @@ const prefetchQ = (() => {
   async function _fetch(n) {
     try {
       if (cachedChapterSet.has(n)) return;               // double-check after await
-      const res = await fetch(`/data/c${n}.json`);
+      const res = await fetch(`./data/c${n}.json`);
       if (!res.ok) return;
       const data = await res.json();
       await idbPut('chapters', { ...data, id: n });
